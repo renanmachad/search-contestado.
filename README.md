@@ -60,6 +60,14 @@ Na primeira execução, todas as queries são processadas. Nas execuções segui
 | `mencao_joao_maria` | `True` se o texto menciona João Maria ou José Maria |
 | `score_relevancia` | Pontuação de 0 a 9 com base em palavras-chave |
 
+## Recomendações
+
+- **Paralelismo** — as buscas nas três fontes são sequenciais. Usar `concurrent.futures.ThreadPoolExecutor` reduziria o tempo total significativamente, já que cada chamada passa a maior parte do tempo esperando resposta da rede.
+- **Busca em texto completo** — `fetch_page_text` faz uma requisição extra para cada URL encontrada. Desativar ou tornar opcional para queries de baixo score economiza tempo e banda.
+- **Checkpoint incremental** — atualmente o CSV só é salvo ao fim da execução. Salvar a cada N queries evita perder progresso em caso de interrupção.
+- **Rotação de User-Agent** — o scraping do Google Scholar com User-Agent fixo tende a ser bloqueado rapidamente. Usar uma lista rotativa ou biblioteca como `fake-useragent` aumenta a resiliência.
+- **`python-dotenv`** — instalar `python-dotenv` e chamar `load_dotenv()` no início do script permite carregar o `.env` automaticamente, sem precisar do `source .env` manual.
+
 ## Municípios cobertos
 
 Abelardo Luz, Água Doce, Bela Vista do Toldo, Bom Jesus, Caçador, Calmon, Campo Alegre, Campos Novos, Canoinhas, Capinzal, Catanduvas, Curitibanos, Fraiburgo, Frei Rogério, Ibiam, Iomerê, Irani, Itaiópolis, Lebon Régis, Major Vieira, Matos Costa, Monte Castelo, Papanduva, Pinheiro Preto, Ponte Alta do Norte, Porto União, Rio das Antas, Santa Cecília, São Cristóvão do Sul, Três Barras, Timbó Grande, Videira, Vargem.
