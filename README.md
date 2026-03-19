@@ -12,7 +12,7 @@ Os resultados são coletados de três fontes (Tavily, Google Scholar, Hemeroteca
 ## Instalação
 
 ```bash
-pip install requests pandas beautifulsoup4 rapidfuzz
+pip install -r requirements.txt
 ```
 
 ## Configuração
@@ -21,12 +21,6 @@ Crie um arquivo `.env` na raiz do projeto:
 
 ```env
 TAVILY_API_KEY="tvly-..."
-```
-
-Em seguida, carregue as variáveis antes de executar:
-
-```bash
-source .env
 ```
 
 > Adicione `.env` ao `.gitignore` para não expor sua chave de API.
@@ -66,7 +60,6 @@ Na primeira execução, todas as queries são processadas. Nas execuções segui
 - **Busca em texto completo** — `fetch_page_text` faz uma requisição extra para cada URL encontrada. Desativar ou tornar opcional para queries de baixo score economiza tempo e banda.
 - **Checkpoint incremental** — atualmente o CSV só é salvo ao fim da execução. Salvar a cada N queries evita perder progresso em caso de interrupção.
 - **Rotação de User-Agent** — o scraping do Google Scholar com User-Agent fixo tende a ser bloqueado rapidamente. Usar uma lista rotativa ou biblioteca como `fake-useragent` aumenta a resiliência.
-- **`python-dotenv`** — instalar `python-dotenv` e chamar `load_dotenv()` no início do script permite carregar o `.env` automaticamente, sem precisar do `source .env` manual.
 
 ## Municípios cobertos
 

@@ -22,6 +22,9 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 from rapidfuzz import fuzz
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
