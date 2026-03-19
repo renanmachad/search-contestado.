@@ -13,6 +13,8 @@ from __future__ import annotations
 import sqlite3
 import time
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from itertools import product
 from typing import Optional
@@ -44,6 +46,7 @@ FUZZY_CITY_THRESHOLD = 85
 MAX_TAVILY_QUERIES = 2_000
 MAX_SCHOLAR_QUERIES = 200
 MAX_HEMEROTECA_QUERIES = 100
+MAX_WORKERS = 5          # concurrent queries per source
 TAVILY_PAGES = 5
 TAVILY_MAX_RESULTS = 20
 
@@ -177,7 +180,7 @@ def fetch_page_text(url: str) -> str:
         response = requests.get(url, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return BeautifulSoup(response.text, "html.parser").get_text(" ", strip=True)[:MAX_PAGE_TEXT_CHARS]
-    except requests.RequestException:
+    except Exception:
         return ""
 
 
@@ -309,8 +312,8 @@ def hemeroteca_search(
 
 # ── Output ────────────────────────────────────────────────────────────────────
 
-def save_results(results: list[SearchResult]) -> None:
-    new_df = pd.DataFrame([
+def _to_rows(results: list[SearchResult]) -> list[dict]:
+    return [
         {
             "busca": r.query,
             "titulo": r.title,
@@ -322,19 +325,28 @@ def save_results(results: list[SearchResult]) -> None:
             "score_relevancia": r.relevance_score,
         }
         for r in results
-    ])
+    ]
 
-    if os.path.exists(OUTPUT_CSV):
-        existing = pd.read_csv(OUTPUT_CSV, dtype=str)
-        df = pd.concat([existing, new_df], ignore_index=True)
-    else:
-        df = new_df
 
+def append_results(new_results: list[SearchResult]) -> None:
+    """Append new rows to the CSV immediately after each query completes."""
+    if not new_results:
+        return
+    write_header = not os.path.exists(OUTPUT_CSV)
+    pd.DataFrame(_to_rows(new_results)).to_csv(
+        OUTPUT_CSV, mode="a", header=write_header, index=False, encoding="utf-8"
+    )
+
+
+def finalise_results() -> None:
+    """Sort the accumulated CSV by relevance score and regenerate the cities file."""
+    if not os.path.exists(OUTPUT_CSV):
+        return
+    df = pd.read_csv(OUTPUT_CSV, dtype=str)
     df = df.sort_values("score_relevancia", ascending=False)
     df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8")
     df["cidade_detectada"].value_counts().to_csv(CITIES_CSV)
-
-    print(f"\nTotal acumulado: {len(df)} ({len(new_df)} novos)")
+    print(f"\nTotal acumulado: {len(df)}")
     print(f"Arquivos: {OUTPUT_CSV}, {CITIES_CSV}")
 
 
@@ -351,27 +363,41 @@ def main() -> None:
 
     db = LinkDatabase()
     results: list[SearchResult] = []
+    lock = threading.Lock()
+
+    def run_batch(search_fn, batch: list[str], label: str) -> None:
+        total = len(batch)
+        print(f"\n{label}: {total} queries")
+        counter = {"n": 0}
+
+        def run_one(query: str) -> None:
+            with lock:
+                counter["n"] += 1
+                n = counter["n"]
+            print(f"  {label} [{n}/{total}]: {query}")
+            local: list[SearchResult] = []
+            search_fn(query, db, local)
+            with lock:
+                results.extend(local)
+                append_results(local)
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = [executor.submit(run_one, q) for q in batch]
+            for f in as_completed(futures):
+                f.result()  # re-raises any exception from the thread
 
     try:
-        tavily_batch = pending[:MAX_TAVILY_QUERIES]
-        print(f"\nTavily: {len(tavily_batch)} queries")
-        for i, query in enumerate(tavily_batch, start=1):
-            print(f"  [{i}/{len(tavily_batch)}]: {query}")
-            tavily_search(query, db, results)
-
-        scholar_batch = pending[:MAX_SCHOLAR_QUERIES]
-        print(f"\nScholar: {len(scholar_batch)} queries")
-        for i, query in enumerate(scholar_batch, start=1):
-            print(f"  [{i}/{len(scholar_batch)}]: {query}")
-            scholar_search(query, db, results)
-
-        hemeroteca_batch = pending[:MAX_HEMEROTECA_QUERIES]
-        print(f"\nHemeroteca: {len(hemeroteca_batch)} queries")
-        for i, query in enumerate(hemeroteca_batch, start=1):
-            print(f"  [{i}/{len(hemeroteca_batch)}]: {query}")
-            hemeroteca_search(query, db, results)
+        sources = [
+            (tavily_search,     pending[:MAX_TAVILY_QUERIES],     "Tavily"),
+            (scholar_search,    pending[:MAX_SCHOLAR_QUERIES],    "Scholar"),
+            (hemeroteca_search, pending[:MAX_HEMEROTECA_QUERIES], "Hemeroteca"),
+        ]
+        with ThreadPoolExecutor(max_workers=len(sources)) as executor:
+            futures = [executor.submit(run_batch, fn, batch, label) for fn, batch, label in sources]
+            for f in as_completed(futures):
+                f.result()
     finally:
-        save_results(results)
+        finalise_results()
         db.close()
 
 
