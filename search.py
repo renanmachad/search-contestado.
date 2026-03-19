@@ -146,7 +146,8 @@ def build_queries() -> list[str]:
 
 class LinkDatabase:
     def __init__(self, path: str = DB_PATH) -> None:
-        self._conn = sqlite3.connect(path)
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS links_vistos (link TEXT PRIMARY KEY)"
         )
@@ -154,12 +155,13 @@ class LinkDatabase:
 
     def mark_seen(self, url: str) -> bool:
         """Insert URL; return True if new, False if already seen."""
-        try:
-            self._conn.execute("INSERT INTO links_vistos VALUES (?)", (url,))
-            self._conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            return False
+        with self._lock:
+            try:
+                self._conn.execute("INSERT INTO links_vistos VALUES (?)", (url,))
+                self._conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
 
     def close(self) -> None:
         self._conn.close()
