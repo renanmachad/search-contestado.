@@ -17,9 +17,19 @@ pip install requests pandas beautifulsoup4 rapidfuzz
 
 ## Configuração
 
-```bash
-export TAVILY_API_KEY="tvly-..."
+Crie um arquivo `.env` na raiz do projeto:
+
+```env
+TAVILY_API_KEY="tvly-..."
 ```
+
+Em seguida, carregue as variáveis antes de executar:
+
+```bash
+source .env
+```
+
+> Adicione `.env` ao `.gitignore` para não expor sua chave de API.
 
 ## Execução
 
